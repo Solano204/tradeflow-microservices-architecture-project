@@ -1,0 +1,97 @@
+---
+# Fraud Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-service-config
+  namespace: tradeflow-production
+data:
+  POSTGRES_URL: "jdbc:postgresql://fraud-postgres.tradeflow-infrastructure.svc.cluster.local:5432/fraud_db"
+  MONGO_URI: "mongodb://fraud-mongodb.tradeflow-infrastructure.svc.cluster.local:27017/fraud_db"
+  REDIS_HOST: "fraud-redis.tradeflow-infrastructure.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  OPENAI_API_KEY: "sk-REPLACE_WITH_REAL_KEY"
+  ZIPKIN_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:9411"
+  SPRING_PROFILES_ACTIVE: "prod"
+---
+# Fraud Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fraud-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  POSTGRES_USER: "fraud"
+  POSTGRES_PASSWORD: "fraud_secret"
+---
+# Fraud Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-service
+  namespace: tradeflow-production
+  labels:
+    app: fraud-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8087
+      targetPort: 8087
+      protocol: TCP
+      name: http
+  selector:
+    app: fraud-service
+---
+# Fraud Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-service
+  namespace: tradeflow-production
+  labels:
+    app: fraud-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-service
+  template:
+    metadata:
+      labels:
+        app: fraud-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: fraud-service
+          image: joshua76i/tradeflow-fraud-service:1.0.0
+          ports:
+            - containerPort: 8087
+              name: http
+          envFrom:
+            - configMapRef:
+                name: fraud-service-config
+            - secretRef:
+                name: fraud-service-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8087
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8087
+            initialDelaySeconds: 60
+            periodSeconds: 20

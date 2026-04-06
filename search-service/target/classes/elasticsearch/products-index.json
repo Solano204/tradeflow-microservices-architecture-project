@@ -1,0 +1,134 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "analysis": {
+      "tokenizer": {
+        "edge_ngram_tokenizer": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 20,
+          "token_chars": ["letter", "digit"]
+        }
+      },
+      "analyzer": {
+        "autocomplete_index_analyzer": {
+          "type": "custom",
+          "tokenizer": "edge_ngram_tokenizer",
+          "filter": ["lowercase"]
+        },
+        "autocomplete_search_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase"]
+        },
+        "spanish_text_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "spanish_stop", "spanish_stemmer"]
+        },
+        "synonym_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "synonym_filter"]
+        }
+      },
+      "filter": {
+        "spanish_stop": {
+          "type": "stop",
+          "stopwords": "_spanish_"
+        },
+        "spanish_stemmer": {
+          "type": "stemmer",
+          "language": "spanish"
+        },
+        "synonym_filter": {
+          "type": "synonym_graph",
+          "synonyms": [
+            "mobile phone, cell phone, smartphone, teléfono celular, móvil, celular",
+            "laptop, notebook, portátil, computadora portátil",
+            "television, tv, smart tv, pantalla, televisión",
+            "tablet, ipad, tableta",
+            "headphones, earbuds, auriculares, audifonos, earphones",
+            "charger, cargador, power adapter",
+            "shoes, sneakers, zapatos, tenis, calzado",
+            "shirt, playera, camiseta, blusa",
+            "pants, trousers, pantalón, jeans",
+            "dress, vestido",
+            "jacket, chamarra, chaqueta",
+            "bag, bolsa, purse, mochila, backpack",
+            "refrigerator, fridge, refrigerador, nevera",
+            "washing machine, lavadora",
+            "microwave, microondas",
+            "blender, licuadora",
+            "sofa, couch, sofá, sillón",
+            "perfume, fragrance, fragancia",
+            "bicycle, bike, bicicleta"
+          ],
+          "updateable": false
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "id":          { "type": "keyword" },
+
+      "title": {
+        "type": "text",
+        "analyzer": "synonym_analyzer",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "autocomplete": {
+            "type": "text",
+            "analyzer": "autocomplete_index_analyzer",
+            "search_analyzer": "autocomplete_search_analyzer"
+          }
+        }
+      },
+
+      "description": {
+        "type": "text",
+        "analyzer": "spanish_text_analyzer"
+      },
+
+      "merchant_name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
+        }
+      },
+
+      "merchant_id":   { "type": "keyword" },
+      "category_id":   { "type": "keyword" },
+      "category_path": { "type": "keyword" },
+
+      "price":        { "type": "float" },
+      "currency":     { "type": "keyword" },
+      "rating":       { "type": "float" },
+      "review_count": { "type": "integer" },
+      "sales_count":  { "type": "integer" },
+      "available":    { "type": "boolean" },
+
+      "thumbnail_url": { "type": "keyword", "index": false },
+
+      "attributes": {
+        "type": "object",
+        "properties": {
+          "brand":           { "type": "keyword" },
+          "color":           { "type": "keyword" },
+          "size":            { "type": "keyword" },
+          "material":        { "type": "keyword" },
+          "storage_gb":      { "type": "keyword" },
+          "connector_type":  { "type": "keyword" },
+          "screen_size":     { "type": "keyword" }
+        }
+      },
+
+      "location":        { "type": "geo_point" },
+      "created_at":      { "type": "date" },
+      "listed_days_ago": { "type": "integer" }
+    }
+  }
+}

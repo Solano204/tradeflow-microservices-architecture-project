@@ -1,0 +1,93 @@
+---
+# Inventory Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-service-config
+  namespace: tradeflow-production
+data:
+  POSTGRES_URL: "jdbc:postgresql://inventory-postgres.tradeflow-infrastructure.svc.cluster.local:5432/inventory_db"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  ZIPKIN_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:9411"
+  SPRING_PROFILES_ACTIVE: "prod"
+---
+# Inventory Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: inventory-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  POSTGRES_USER: "inventory"
+  POSTGRES_PASSWORD: "inventory_secret"
+---
+# Inventory Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: tradeflow-production
+  labels:
+    app: inventory-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8083
+      targetPort: 8083
+      protocol: TCP
+      name: http
+  selector:
+    app: inventory-service
+---
+# Inventory Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service
+  namespace: tradeflow-production
+  labels:
+    app: inventory-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-service
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: inventory-service
+          image: joshua76i/tradeflow-inventory-service:1.0.0
+          ports:
+            - containerPort: 8083
+              name: http
+          envFrom:
+            - configMapRef:
+                name: inventory-service-config
+            - secretRef:
+                name: inventory-service-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 20

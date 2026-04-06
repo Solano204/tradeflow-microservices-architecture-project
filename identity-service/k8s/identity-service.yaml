@@ -1,0 +1,314 @@
+---
+# ─── ConfigMap ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identity-service-config
+  namespace: tradeflow
+data:
+  POSTGRES_URL: "jdbc:postgresql://postgres-service:5432/identity_db"
+  MONGODB_URI: "mongodb://mongodb-service:27017/identity_readmodel"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service:8080/.well-known/jwks.json"
+  AWS_REGION: "us-east-1"
+  KYC_S3_BUCKET: "tradeflow-kyc-documents"
+
+---
+# ─── Secret (reference — actual values injected from Vault/AWS Secrets Manager)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: identity-service-secrets
+  namespace: tradeflow
+type: Opaque
+stringData:
+  POSTGRES_USER: "identity"
+  POSTGRES_PASSWORD: "REPLACE_WITH_VAULT_SECRET"
+  REDIS_PASSWORD: ""
+  JUMIO_API_TOKEN: "REPLACE_WITH_VAULT_SECRET"
+  JUMIO_API_SECRET: "REPLACE_WITH_VAULT_SECRET"
+  JUMIO_WEBHOOK_SECRET: "REPLACE_WITH_VAULT_SECRET"
+  AWS_ACCESS_KEY_ID: "REPLACE_WITH_IAM_ROLE"
+  AWS_SECRET_ACCESS_KEY: "REPLACE_WITH_IAM_ROLE"
+
+---
+# ─── Public Service (external — via Gateway) ──────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: tradeflow
+  labels:
+    app: identity-service
+spec:
+  type: ClusterIP
+  selector:
+    app: identity-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+---
+# ─── Internal Service (port 8080, NetworkPolicy restricts to order-service only)
+# Note: Both public and internal endpoints are served on 8080.
+# NetworkPolicy is the enforcement boundary for /internal/* routes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service-internal
+  namespace: tradeflow
+  labels:
+    app: identity-service
+    access: internal
+spec:
+  type: ClusterIP
+  selector:
+    app: identity-service
+  ports:
+    - name: internal-http
+      port: 8081
+      targetPort: 8080
+
+---
+# ─── Deployment ──────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: tradeflow
+  labels:
+    app: identity-service
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: identity-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: identity-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: identity-service-sa
+
+      # Graceful shutdown: allow in-flight requests to complete
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: identity-service
+          image: tradeflow/identity-service:1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          
+          envFrom:
+            - configMapRef:
+                name: identity-service-config
+            - secretRef:
+                name: identity-service-secrets
+          
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          
+          # ── Probes ─────────────────────────────────────────────────────────
+          # Startup: wait up to 60s for JVM + Flyway to initialize
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 12
+            timeoutSeconds: 3
+          
+          # Liveness: if the app deadlocks, restart it
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+          
+          # Readiness: remove from LB if PostgreSQL/Redis/MongoDB unreachable
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 3
+          
+          lifecycle:
+            preStop:
+              exec:
+                # Give Kubernetes 15s to drain connections before SIGTERM
+                command: ["sh", "-c", "sleep 15"]
+
+---
+# ─── HPA (Horizontal Pod Autoscaler) ─────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: identity-service-hpa
+  namespace: tradeflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: identity-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# ─── PodDisruptionBudget ──────────────────────────────────────────────────────
+# Never evict all pods simultaneously during node drains
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: identity-service-pdb
+  namespace: tradeflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: identity-service
+
+---
+# ─── NetworkPolicy ────────────────────────────────────────────────────────────
+# Strict: only allow traffic from Gateway and Order Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-service-netpol
+  namespace: tradeflow
+spec:
+  podSelector:
+    matchLabels:
+      app: identity-service
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress:
+    # Public API (port 8080): allow from API Gateway only
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # Internal API (port 8080 /internal/*): allow from Order Service only
+    # Note: NetworkPolicy is IP/port based — /internal/* path restriction
+    # is enforced at the application level (separate ClusterIP service)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  egress:
+    # PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    
+    # MongoDB
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - protocol: TCP
+          port: 27017
+    
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    
+    # Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    
+    # Auth Service (JWKS fetch)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # External: AWS S3 + Jumio API (HTTPS)
+    - ports:
+        - protocol: TCP
+          port: 443
+
+---
+# ─── ServiceAccount ───────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: identity-service-sa
+  namespace: tradeflow
+  annotations:
+    # AWS IRSA — allows Pod to assume IAM role for S3 access without static keys
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/identity-service-role"

@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: TradeFlow
+    orgId: 1
+    folder: TradeFlow
+    folderUid: tradeflow
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

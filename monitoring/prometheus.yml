@@ -1,0 +1,65 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'tradeflow-monitor'
+
+scrape_configs:
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Auth Service — Quarkus → /q/metrics
+  - job_name: 'auth-service'
+    metrics_path: '/q/metrics'
+    static_configs:
+      - targets: ['tradeflow-auth-service:8080']
+
+  # Identity Service — Spring Boot → /actuator/prometheus
+  - job_name: 'identity-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-identity-service:8081']
+
+  # Catalog Service
+  - job_name: 'catalog-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-catalog-service:8082']
+
+  # Inventory Service
+  - job_name: 'inventory-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-inventory-service:8083']
+
+  # Order Service
+  - job_name: 'order-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-order-service:8084']
+
+  # Payment Service — Quarkus → /q/metrics
+  - job_name: 'payment-service'
+    metrics_path: '/q/metrics'
+    static_configs:
+      - targets: ['tradeflow-payment-service:8085']
+
+  # Fraud Service
+  - job_name: 'fraud-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-fraud-service:8087']
+
+  # Search Service — port 8089
+  - job_name: 'search-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['tradeflow-search-service:8089']
+
+  # Zipkin
+  - job_name: 'zipkin'
+    metrics_path: '/prometheus'
+    static_configs:
+      - targets: ['tradeflow-zipkin:9411']

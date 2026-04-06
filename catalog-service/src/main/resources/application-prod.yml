@@ -1,0 +1,654 @@
+version: '3.9'
+
+# ============================================================
+# TradeFlow — Complete Infrastructure
+# Added: Catalog Service + S3 Mock (LocalStack)
+# ============================================================
+
+services:
+
+  # ============================================================
+  # SHARED INFRASTRUCTURE — Kafka
+  # ============================================================
+
+  tradeflow-zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: tradeflow-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  tradeflow-kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: tradeflow-kafka
+    depends_on:
+      - tradeflow-zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: tradeflow-zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://tradeflow-kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  tradeflow-kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: tradeflow-kafka-ui
+    depends_on:
+      tradeflow-kafka:
+        condition: service_healthy
+    ports:
+      - "8095:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: tradeflow-prod
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: tradeflow-kafka:29092
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # MOCK SERVERS (Replace AWS, Stripe, Okta, etc.)
+  # ============================================================
+
+  auth-mock-server:
+    image: mockserver/mockserver:5.15.0
+    container_name: auth-mock-server
+    ports:
+      - "8081:8080"
+    environment:
+      MOCKSERVER_PROPERTY_FILE: /config/mockserver.properties
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /config/auth-mock-init.json
+    volumes:
+      - ./mock-configs/auth-mock-init.json:/config/auth-mock-init.json:ro
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  payment-mock-server:
+    image: mockserver/mockserver:5.15.0
+    container_name: payment-mock-server
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./mock-configs/payment-mock-init.json:/config/payment-mock-init.json:ro
+    environment:
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /config/payment-mock-init.json
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # S3 Mock Server (LocalStack)
+  s3-mock-server:
+    image: localstack/localstack:3.0
+    container_name: s3-mock-server
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+      DATA_DIR: /tmp/localstack/data
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - localstack-data:/tmp/localstack
+      - ./mock-configs/s3-mock-init.sh:/etc/localstack/init/ready.d/init-s3.sh:ro
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # AUTH SERVICE (Quarkus)
+  # ============================================================
+
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: tradeflow-auth-postgres
+    environment:
+      POSTGRES_DB: tradeflow_auth
+      POSTGRES_USER: tradeflow_auth
+      POSTGRES_PASSWORD: tradeflow_auth_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradeflow_auth -d tradeflow_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  auth-redis:
+    image: redis:7.2-alpine
+    container_name: tradeflow-auth-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - auth-redisdata:/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      auth-redis:
+        condition: service_healthy
+      tradeflow-kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      QUARKUS_PROFILE: prod
+    volumes:
+      - ./auth-service/keys:/app/keys:ro
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # IDENTITY SERVICE
+  # ============================================================
+
+  identity-postgres:
+    image: postgres:16-alpine
+    container_name: tradeflow-identity-postgres
+    environment:
+      POSTGRES_DB: identity_db
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity_secret
+    ports:
+      - "5434:5432"
+    volumes:
+      - identity-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  identity-mongodb:
+    image: mongo:7.0
+    container_name: tradeflow-identity-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: identity_readmodel
+    ports:
+      - "27018:27017"
+    volumes:
+      - identity-mongodata:/data/db
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  identity-redis:
+    image: redis:7.2-alpine
+    container_name: tradeflow-identity-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"
+    volumes:
+      - identity-redisdata:/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ============================================================
+  # CATALOG SERVICE (NEW)
+  # ============================================================
+
+  catalog-postgres:
+    image: postgres:16-alpine
+    container_name: catalog-postgres
+    environment:
+      POSTGRES_DB: catalog_db
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog_secret
+    ports:
+      - "5435:5432"
+    volumes:
+      - catalog-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog -d catalog_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  catalog-mongodb:
+    image: mongo:7.0
+    container_name: catalog-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: catalog_details
+    ports:
+      - "27019:27017"
+    volumes:
+      - catalog-mongodata:/data/db
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  catalog-redis:
+    image: redis:7.2-alpine
+    container_name: catalog-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6381:6379"
+    volumes:
+      - catalog-redisdata:/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  catalog-service:
+    build:
+      context: ./catalog-service
+      dockerfile: Dockerfile
+    container_name: catalog-service
+    depends_on:
+      catalog-postgres:
+        condition: service_healthy
+      catalog-mongodb:
+        condition: service_healthy
+      catalog-redis:
+        condition: service_healthy
+      tradeflow-kafka:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      s3-mock-server:
+        condition: service_started
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # AWS SDK configuration for LocalStack
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  # ============================================================
+  # SEARCH SERVICE (Port 8089)
+  # ============================================================
+
+  search-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: search-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=tradeflow-search
+    ports:
+      - "9200:9200"
+    volumes:
+      - search-esdata:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  search-kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: search-kibana
+    depends_on:
+      search-elasticsearch:
+        condition: service_healthy
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://search-elasticsearch:9200
+      - xpack.security.enabled=false
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  search-redis:
+    image: redis:7-alpine
+    container_name: search-redis
+    ports:
+      - "6382:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ============================================================
+  # INVENTORY SERVICE
+  # ============================================================
+
+  inventory-postgres:
+    image: postgres:16-alpine
+    container_name: inventory-postgres
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: inventory_secret
+    ports:
+      - "5436:5432"
+    volumes:
+      - inventory-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ============================================================
+  # ORDER SERVICE
+  # ============================================================
+
+  order-postgres:
+    image: postgres:16-alpine
+    container_name: order-postgres
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order_secret
+    ports:
+      - "5437:5432"
+    volumes:
+      - order-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ============================================================
+  # PAYMENT SERVICE
+  # ============================================================
+
+  payment-postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment_secret
+    ports:
+      - "5438:5432"
+    volumes:
+      - payment-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  payment-mongodb:
+    image: mongo:7.0
+    container_name: payment-mongodb
+    ports:
+      - "27021:27017"
+    volumes:
+      - payment-mongodata:/data/db
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  payment-redis:
+    image: redis:7-alpine
+    container_name: payment-redis
+    ports:
+      - "6385:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # FRAUD SERVICE
+  # ============================================================
+
+  fraud-postgres:
+    image: postgres:16-alpine
+    container_name: fraud-postgres
+    environment:
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: fraud_secret
+    ports:
+      - "5439:5432"
+    volumes:
+      - fraud-pgdata:/var/lib/postgresql/data
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d fraud_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  fraud-mongodb:
+    image: mongo:7.0
+    container_name: fraud-mongodb
+    ports:
+      - "27022:27017"
+    volumes:
+      - fraud-mongodata:/data/db
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  fraud-redis:
+    image: redis:7-alpine
+    container_name: fraud-redis
+    ports:
+      - "6383:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # ANALYTICS SERVICE
+  # ============================================================
+
+  analytics-mongodb:
+    image: mongo:7.0
+    container_name: analytics-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: tradeflow_analytics
+    ports:
+      - "27023:27017"
+    volumes:
+      - analytics-mongodata:/data/db
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  analytics-redis:
+    image: redis:7-alpine
+    container_name: analytics-redis
+    ports:
+      - "6386:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    depends_on:
+      tradeflow-kafka:
+        condition: service_healthy
+      analytics-mongodb:
+        condition: service_healthy
+      analytics-redis:
+        condition: service_healthy
+      auth-mock-server:
+        condition: service_started
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - analytics-rocksdb:/app/data/kafka-streams
+    networks:
+      - tradeflow-shared
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+# ============================================================
+# VOLUMES
+# ============================================================
+
+volumes:
+  auth-pgdata:
+  auth-redisdata:
+  identity-pgdata:
+  identity-mongodata:
+  identity-redisdata:
+  catalog-pgdata:
+  catalog-mongodata:
+  catalog-redisdata:
+  inventory-pgdata:
+  order-pgdata:
+  payment-pgdata:
+  payment-mongodata:
+  fraud-pgdata:
+  fraud-mongodata:
+  search-esdata:
+  analytics-mongodata:
+  analytics-rocksdb:
+  localstack-data:
+
+# ============================================================
+# NETWORKS
+# ============================================================
+
+networks:
+  tradeflow-shared:
+    driver: bridge

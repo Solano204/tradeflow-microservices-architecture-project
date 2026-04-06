@@ -1,0 +1,141 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tradeflow-gateway
+  namespace: tradeflow-production
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: web
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tradeflow-api-routes
+  namespace: tradeflow-production
+spec:
+  parentRefs:
+    - name: tradeflow-gateway
+      namespace: tradeflow-production
+  hostnames:
+    - "api.tradeflow.local"
+    - "tradeflow.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/auth
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: auth-service
+          namespace: tradeflow-production
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/identity
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: identity-service
+          namespace: tradeflow-production
+          port: 8081
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/catalog
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: catalog-service
+          namespace: tradeflow-production
+          port: 8082
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/inventory
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: inventory-service
+          namespace: tradeflow-production
+          port: 8083
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/orders
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: order-service
+          namespace: tradeflow-production
+          port: 8084
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/payments
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: payment-service
+          namespace: tradeflow-production
+          port: 8085
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/fraud
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: fraud-service
+          namespace: tradeflow-production
+          port: 8087
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/search
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: search-service
+          namespace: tradeflow-production
+          port: 8089

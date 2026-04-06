@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>io.tradeflow</groupId>
+    <artifactId>search-service</artifactId>
+    <version>1.0.0</version>
+    <description>TradeFlow Search Service — Elasticsearch, BM25 + function score, edge NGram autocomplete, Kafka index sync</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
+        <springdoc.version>2.3.0</springdoc.version>
+    </properties>
+
+    <dependencies>
+
+        <!-- ================================================================ -->
+        <!-- SPRING BOOT CORE                                                 -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!--
+            AOP — required for:
+              - @CircuitBreaker, @TimeLimiter (Resilience4j)
+              - @Observed annotation support (Micrometer)
+            Only one declaration needed — remove the duplicate that was
+            at the bottom of the old pom.xml.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- ELASTICSEARCH — Java Client 8 (type-safe DSL)                   -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>8.12.2</version>
+        </dependency>
+        <!--
+            jackson-databind is a transitive dependency of elasticsearch-java,
+            but declaring it explicitly ensures version alignment with Spring Boot BOM.
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- KAFKA — 2 consumers for index synchronization                   -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+        <!--
+            Kafka admin client — used by SearchService.getIndexHealth()
+            to compute Kafka consumer lag metrics.
+            Version is managed by Spring Boot BOM via spring-kafka.
+        -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- REDIS — fallback cache for Circuit Breaker open scenario         -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- WEBFLUX — reactive HTTP client for InternalServiceClients        -->
+        <!--                                                                  -->
+        <!-- InternalServiceClients uses WebClient (reactive) to call         -->
+        <!-- Product Catalog and Inventory services with .block().            -->
+        <!-- With spring.threads.virtual.enabled=true, .block() parks a       -->
+        <!-- virtual thread (not a carrier thread) — no pool exhaustion.      -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- RESILIENCE4J — Elasticsearch Circuit Breaker + TimeLimiter       -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- SPRINGDOC / SWAGGER UI                                           -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- METRICS — Prometheus                                             -->
+        <!-- ================================================================ -->
+        <!--
+            Only one declaration of micrometer-registry-prometheus.
+            The old pom.xml had it twice — removed the duplicate.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <!-- version managed by Spring Boot BOM -->
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- LOMBOK                                                           -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- JACKSON — Java Time support                                      -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <!-- version managed by Spring Boot BOM -->
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- DISTRIBUTED TRACING — Micrometer + Brave → Zipkin               -->
+        <!--                                                                  -->
+        <!-- Spring Boot 3.x tracing stack (Sleuth is DEAD in Boot 3):       -->
+        <!--                                                                  -->
+        <!--   micrometer-tracing-bridge-brave  → bridges Micrometer          -->
+        <!--                                      Observation API to Brave     -->
+        <!--   zipkin-reporter-brave            → converts Brave spans to      -->
+        <!--                                      Zipkin v2 format             -->
+        <!--   brave-instrumentation-kafka-clients → KafkaTracing bean that    -->
+        <!--                                      wraps Producer/Consumer      -->
+        <!--                                      to propagate traceId through -->
+        <!--                                      Kafka message headers        -->
+        <!--                                                                  -->
+        <!-- NOT included (Search Service has no JDBC):                       -->
+        <!--   datasource-micrometer-spring-boot — REMOVED. This dep tries    -->
+        <!--   to proxy a DataSource bean. Search Service has no DataSource    -->
+        <!--   (no PostgreSQL) → startup crash: "DataSource bean not found"   -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+            <!-- version managed by Spring Boot BOM -->
+        </dependency>
+        <dependency>
+            <groupId>io.zipkin.reporter2</groupId>
+            <artifactId>zipkin-reporter-brave</artifactId>
+            <!-- version managed by Spring Boot BOM -->
+        </dependency>
+        <dependency>
+            <groupId>io.zipkin.brave</groupId>
+            <artifactId>brave-instrumentation-kafka-clients</artifactId>
+            <!-- version managed by Spring Boot BOM -->
+        </dependency>
+
+        <!--
+            REMOVED: zipkin-sender-urlconnection
+            Spring Boot 3.x auto-configures the Zipkin sender from
+            management.zipkin.tracing.endpoint in application.properties.
+            Adding this manually creates a duplicate sender and causes
+            spans to be double-reported or the autoconfiguration to back off.
+
+            REMOVED: datasource-micrometer-spring-boot
+            Search Service has NO JDBC/PostgreSQL. This dep attempts to wrap
+            a DataSource bean that doesn't exist → NoSuchBeanDefinitionException
+            at startup. Only add it to services that use Spring Data JPA.
+        -->
+
+        <!-- ================================================================ -->
+        <!-- TESTING                                                          -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

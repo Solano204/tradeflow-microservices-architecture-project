@@ -1,0 +1,30 @@
+---
+# Auth Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: tradeflow-production
+data:
+  DB_HOST: "auth-postgres.tradeflow-infrastructure.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "tradeflow_auth"
+  REDIS_URL: "redis://auth-redis.tradeflow-infrastructure.svc.cluster.local:6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  JWT_ISSUER: "https://auth.tradeflow.io"
+  JWT_KID: "auth-key-2024-v1"
+  OTEL_COLLECTOR_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:4318"
+  QUARKUS_PROFILE: "prod"
+  OKTA_ENABLED: "false"
+---
+# Auth Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  DB_USERNAME: "tradeflow_auth"
+  DB_PASSWORD: "tradeflow_auth_pass"
+  REDIS_PASSWORD: ""

@@ -1,0 +1,35 @@
+---
+# Identity Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identity-service-config
+  namespace: tradeflow-production
+data:
+  POSTGRES_URL: "jdbc:postgresql://identity-postgres.tradeflow-infrastructure.svc.cluster.local:5432/identity_db"
+  MONGODB_URI: "mongodb://identity-mongodb.tradeflow-infrastructure.svc.cluster.local:27017/identity_readmodel"
+  REDIS_HOST: "identity-redis.tradeflow-infrastructure.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  AWS_REGION: "us-east-1"
+  AWS_ACCESS_KEY_ID: "test"
+  AWS_SECRET_ACCESS_KEY: "test"
+  KYC_S3_BUCKET: "tradeflow-kyc-documents"
+  JUMIO_API_URL: "http://jumio-mock.tradeflow-infrastructure.svc.cluster.local:8080/mock"
+  JUMIO_API_TOKEN: "mock"
+  JUMIO_API_SECRET: "mock"
+  JUMIO_WEBHOOK_SECRET: "mock-webhook-secret"
+  ZIPKIN_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:9411"
+  SPRING_PROFILES_ACTIVE: "prod"
+---
+# Identity Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: identity-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  POSTGRES_USER: "identity"
+  POSTGRES_PASSWORD: "identity_secret"

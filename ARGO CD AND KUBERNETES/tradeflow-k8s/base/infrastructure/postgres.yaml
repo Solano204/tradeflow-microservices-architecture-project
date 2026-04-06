@@ -1,0 +1,489 @@
+---
+# Auth Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "tradeflow_auth"
+  POSTGRES_USER: "tradeflow_auth"
+  POSTGRES_PASSWORD: "tradeflow_auth_pass"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: auth-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: auth-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-postgres
+  template:
+    metadata:
+      labels:
+        app: auth-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: auth-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - tradeflow_auth
+                - -d
+                - tradeflow_auth
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - tradeflow_auth
+                - -d
+                - tradeflow_auth
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Identity Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: identity-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "identity_db"
+  POSTGRES_USER: "identity"
+  POSTGRES_PASSWORD: "identity_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: identity-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: identity-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: identity-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-postgres
+  template:
+    metadata:
+      labels:
+        app: identity-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: identity-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Catalog Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: catalog-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "catalog_db"
+  POSTGRES_USER: "catalog"
+  POSTGRES_PASSWORD: "catalog_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: catalog-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: catalog-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: catalog-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-postgres
+  template:
+    metadata:
+      labels:
+        app: catalog-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: catalog-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Inventory Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: inventory-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "inventory_db"
+  POSTGRES_USER: "inventory"
+  POSTGRES_PASSWORD: "inventory_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: inventory-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: inventory-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: inventory-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-postgres
+  template:
+    metadata:
+      labels:
+        app: inventory-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: inventory-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Order Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: order-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "order_db"
+  POSTGRES_USER: "order"
+  POSTGRES_PASSWORD: "order_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: order-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: order-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: order-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-postgres
+  template:
+    metadata:
+      labels:
+        app: order-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: order-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Payment Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "payment_db"
+  POSTGRES_USER: "payment"
+  POSTGRES_PASSWORD: "payment_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: payment-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: payment-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: payment-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-postgres
+  template:
+    metadata:
+      labels:
+        app: payment-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: payment-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Fraud Service PostgreSQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fraud-postgres-secret
+  namespace: tradeflow-infrastructure
+type: Opaque
+stringData:
+  POSTGRES_DB: "fraud_db"
+  POSTGRES_USER: "fraud"
+  POSTGRES_PASSWORD: "fraud_secret"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: fraud-postgres
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fraud-postgres
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: fraud-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-postgres
+  template:
+    metadata:
+      labels:
+        app: fraud-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: fraud-postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

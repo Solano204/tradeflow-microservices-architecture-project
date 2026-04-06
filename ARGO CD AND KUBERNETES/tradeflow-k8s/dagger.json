@@ -1,0 +1,8 @@
+{
+  "name": "tradeflow-k8s",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "java"
+  },
+  "source": "dagger"
+}

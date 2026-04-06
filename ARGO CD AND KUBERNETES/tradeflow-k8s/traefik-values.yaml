@@ -1,0 +1,16 @@
+experimental:
+  kubernetesGateway:
+    enabled: true
+
+providers:
+  kubernetesGateway:
+    enabled: true
+
+ports:
+  web:
+    port: 8000
+    exposedPort: 80
+    protocol: TCP
+
+service:
+  type: LoadBalancer

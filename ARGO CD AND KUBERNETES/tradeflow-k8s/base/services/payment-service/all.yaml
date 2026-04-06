@@ -1,0 +1,101 @@
+---
+# Payment Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-config
+  namespace: tradeflow-production
+data:
+  POSTGRES_REACTIVE_URL: "postgresql://payment-postgres.tradeflow-infrastructure.svc.cluster.local:5432/payment_db"
+  POSTGRES_JDBC_URL: "jdbc:postgresql://payment-postgres.tradeflow-infrastructure.svc.cluster.local:5432/payment_db"
+  MONGO_URL: "mongodb://payment-mongodb.tradeflow-infrastructure.svc.cluster.local:27017/payment_audit"
+  REDIS_URL: "redis://payment-redis.tradeflow-infrastructure.svc.cluster.local:6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  OIDC_AUTH_SERVER_URL: "http://auth-service.tradeflow-production.svc.cluster.local:8080"
+  JWT_JWKS_URL: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  JWT_ISSUER: "https://auth.tradeflow.io"
+  STRIPE_MOCK_ENABLED: "true"
+  STRIPE_SECRET_KEY: "sk_test_mock_production"
+  STRIPE_WEBHOOK_SECRET: "whsec_test_mock_production"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:4318"
+  QUARKUS_PROFILE: "prod"
+---
+# Payment Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  POSTGRES_USER: "payment"
+  POSTGRES_PASSWORD: "payment_secret"
+---
+# Payment Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: tradeflow-production
+  labels:
+    app: payment-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8085
+      targetPort: 8085
+      protocol: TCP
+      name: http
+  selector:
+    app: payment-service
+---
+# Payment Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: tradeflow-production
+  labels:
+    app: payment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: payment-service
+          image: joshua76i/tradeflow-payment-service:1.0.0
+          ports:
+            - containerPort: 8085
+              name: http
+          envFrom:
+            - configMapRef:
+                name: payment-service-config
+            - secretRef:
+                name: payment-service-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8085
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8085
+            initialDelaySeconds: 60
+            periodSeconds: 20

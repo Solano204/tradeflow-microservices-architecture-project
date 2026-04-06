@@ -1,0 +1,240 @@
+services:
+
+  # ============================================================
+  # AUTH SERVICE (Quarkus 3.6.4) — Port: 8080
+  # ============================================================
+  tradeflow-auth-service:
+    image: joshua76i/tradeflow-auth-service:1.0.0
+    container_name: tradeflow-auth-service
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: tradeflow-auth-postgres
+      DB_PORT: 5432
+      DB_NAME: tradeflow_auth
+      DB_USERNAME: tradeflow_auth
+      DB_PASSWORD: tradeflow_auth_pass
+      REDIS_URL: redis://tradeflow-auth-redis:6379
+      REDIS_PASSWORD: ""
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      JWT_ISSUER: https://auth.tradeflow.io
+      JWT_KID: auth-key-2024-v1
+      OTEL_COLLECTOR_URL: http://tradeflow-zipkin:4318
+      QUARKUS_PROFILE: prod
+      OKTA_ENABLED: "false"
+    volumes:
+      - ./auth-service/application-prod.properties:/deployments/config/application.properties:ro
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # IDENTITY SERVICE (Spring Boot 3.2.3) — Port: 8081
+  # ============================================================
+  tradeflow-identity-service:
+    image: joshua76i/tradeflow-identity-service:1.0.0
+    container_name: tradeflow-identity-service
+    ports:
+      - "8081:8081"
+    environment:
+      POSTGRES_URL: jdbc:postgresql://tradeflow-identity-postgres:5432/identity_db
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity_secret
+      MONGODB_URI: mongodb://tradeflow-identity-mongodb:27017/identity_readmodel
+      REDIS_HOST: tradeflow-identity-redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      KYC_S3_BUCKET: tradeflow-kyc-documents
+      JUMIO_API_URL: http://tradeflow-jumio-mock:8080/mock
+      JUMIO_API_TOKEN: mock
+      JUMIO_API_SECRET: mock
+      JUMIO_WEBHOOK_SECRET: mock-webhook-secret
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./identity-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # CATALOG SERVICE (Spring Boot 3.2.3) — Port: 8082
+  # ============================================================
+  tradeflow-catalog-service:
+    image: joshua76i/tradeflow-catalog-service:1.0.0
+    container_name: tradeflow-catalog-service
+    ports:
+      - "8082:8082"
+    environment:
+      POSTGRES_URL: jdbc:postgresql://tradeflow-catalog-postgres:5432/catalog_db
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog_secret
+      MONGODB_URI: mongodb://tradeflow-catalog-mongodb:27017/catalog_details
+      REDIS_HOST: tradeflow-catalog-redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      MEDIA_S3_BUCKET: tradeflow-product-media
+      CDN_DOMAIN: localhost:4566
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./catalog-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # INVENTORY SERVICE (Spring Boot 3.2.3) — Port: 8083
+  # ============================================================
+  tradeflow-inventory-service:
+    image: joshua76i/tradeflow-inventory-service:1.0.0
+    container_name: tradeflow-inventory-service
+    ports:
+      - "8083:8083"
+    environment:
+      POSTGRES_URL: jdbc:postgresql://tradeflow-inventory-postgres:5432/inventory_db
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: inventory_secret
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./inventory-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # ORDER SERVICE (Spring Boot 3.2.3) — Port: 8084
+  # ============================================================
+  tradeflow-order-service:
+    image: joshua76i/tradeflow-order-service:1.0.0
+    container_name: tradeflow-order-service
+    ports:
+      - "8084:8084"
+    environment:
+      POSTGRES_URL: jdbc:postgresql://tradeflow-order-postgres:5432/order_db
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order_secret
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      JWK_SET_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      INVENTORY_SERVICE_URL: http://tradeflow-inventory-service:8083
+      IDENTITY_SERVICE_URL: http://tradeflow-identity-service:8081
+      CATALOG_SERVICE_URL: http://tradeflow-catalog-service:8082
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./order-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+      - tradeflow-inventory-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # PAYMENT SERVICE (Quarkus 3.8.3) — Port: 8085
+  # ============================================================
+  tradeflow-payment-service:
+    image: joshua76i/tradeflow-payment-service:1.0.0
+    container_name: tradeflow-payment-service
+    ports:
+      - "8085:8085"
+    environment:
+      POSTGRES_REACTIVE_URL: postgresql://tradeflow-payment-postgres:5432/payment_db
+      POSTGRES_JDBC_URL: jdbc:postgresql://tradeflow-payment-postgres:5432/payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment_secret
+      MONGO_URL: mongodb://tradeflow-payment-mongodb:27017/payment_audit
+      REDIS_URL: redis://tradeflow-payment-redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      OIDC_AUTH_SERVER_URL: http://tradeflow-auth-service:8080
+      JWT_JWKS_URL: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      JWT_ISSUER: https://auth.tradeflow.io
+      STRIPE_MOCK_ENABLED: "true"
+      STRIPE_SECRET_KEY: sk_test_mock_production
+      STRIPE_WEBHOOK_SECRET: whsec_test_mock_production
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tradeflow-zipkin:4318
+      QUARKUS_PROFILE: prod
+    volumes:
+      - ./payment-service/application-prod.properties:/deployments/config/application.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # FRAUD SERVICE (Spring Boot 3.2.3) — Port: 8087
+  # ============================================================
+  tradeflow-fraud-service:
+    image: joshua76i/tradeflow-fraud-service:1.0.0
+    container_name: tradeflow-fraud-service
+    ports:
+      - "8087:8087"
+    environment:
+      POSTGRES_URL: jdbc:postgresql://tradeflow-fraud-postgres:5432/fraud_db
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: fraud_secret
+      MONGO_URI: mongodb://tradeflow-fraud-mongodb:27017/fraud_db
+      REDIS_HOST: tradeflow-fraud-redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-REPLACE_WITH_REAL_KEY}
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./fraud-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+  # ============================================================
+  # SEARCH SERVICE (Spring Boot 3.2.3) — Port: 8089
+  # ============================================================
+  tradeflow-search-service:
+    image: joshua76i/tradeflow-search-service:1.0.0
+    container_name: tradeflow-search-service
+    ports:
+      - "8089:8089"
+    environment:
+      ES_HOST: tradeflow-search-elasticsearch
+      ES_PORT: 9200
+      REDIS_HOST: tradeflow-search-redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: tradeflow-kafka:29092
+      AUTH_SERVICE_JWKS_URI: http://tradeflow-auth-service:8080/.well-known/jwks.json
+      CATALOG_SERVICE_URL: http://tradeflow-catalog-service:8082
+      INVENTORY_SERVICE_URL: http://tradeflow-inventory-service:8083
+      ZIPKIN_URL: http://tradeflow-zipkin:9411
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - ./search-service/application-prod.properties:/app/config/application-prod.properties:ro
+    depends_on:
+      - tradeflow-auth-service
+    networks:
+      - tradeflow-shared
+    restart: unless-stopped
+
+networks:
+  tradeflow-shared:
+    external: true

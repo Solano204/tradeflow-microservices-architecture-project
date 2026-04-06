@@ -1,0 +1,159 @@
+{
+  "uid": "tradeflow-tracing",
+  "title": "TradeFlow — Distributed Tracing",
+  "description": "Trace ID propagation across all services via Zipkin. Search by traceId, inspect per-service span durations.",
+  "tags": ["tradeflow", "tracing", "zipkin"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "label": "Service",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(up{job=~\"auth-service|identity-service|catalog-service|inventory-service|order-service|payment-service|search-service|fraud-service\"}, job)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "🔍 Trace Explorer — Search by Trace ID in Zipkin",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 3 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Distributed Trace Search\n\nOpen **[Zipkin UI → http://localhost:9411](http://localhost:9411)** to search traces by `traceId`.\n\nAll services propagate the `traceparent` W3C header. A single `traceId` links spans across:\n`auth-service` → `identity-service` → `catalog-service` → `inventory-service` → `order-service` → `payment-service` → `fraud-service` → `search-service`\n\nTrace IDs appear in every service log line: `[traceId=<id> spanId=<id>]`"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Span Duration P50 / P95 / P99 — per service",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 3, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (job, le) (rate(http_server_requests_seconds_bucket{job=~\"$service\"}[2m])))",
+          "legendFormat": "{{job}} P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (job, le) (rate(http_server_requests_seconds_bucket{job=~\"$service\"}[2m])))",
+          "legendFormat": "{{job}} P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (job, le) (rate(http_server_requests_seconds_bucket{job=~\"$service\"}[2m])))",
+          "legendFormat": "{{job}} P99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "lineWidth": 2, "fillOpacity": 5 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 3,
+      "title": "Request Rate by Service & HTTP Status",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 11, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (job, status) (rate(http_server_requests_seconds_count{job=~\"$service\"}[1m]))",
+          "legendFormat": "{{job}} — {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 1, "fillOpacity": 8 }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Active HTTP Connections",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 11, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (job) (tomcat_threads_busy_threads{job=~\"$service\"})",
+          "legendFormat": "{{job}} busy threads"
+        },
+        {
+          "expr": "sum by (job) (http_server_active_requests{job=~\"$service\"})",
+          "legendFormat": "{{job}} active req"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 5,
+      "title": "DB Connection Pool — active vs pending",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (job) (hikaricp_connections_active{job=~\"$service\"})",
+          "legendFormat": "{{job}} active"
+        },
+        {
+          "expr": "sum by (job) (hikaricp_connections_pending{job=~\"$service\"})",
+          "legendFormat": "{{job}} pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Kafka Producer / Consumer Rate — per service",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (job) (rate(kafka_producer_record_send_total{job=~\"$service\"}[1m]))",
+          "legendFormat": "{{job}} produced/s"
+        },
+        {
+          "expr": "sum by (job) (rate(kafka_consumer_fetch_manager_records_consumed_total{job=~\"$service\"}[1m]))",
+          "legendFormat": "{{job}} consumed/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 8 }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Trace Throughput Link",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 4 },
+      "options": {
+        "mode": "markdown",
+        "content": "### Quick Links\n| UI | URL | Purpose |\n|---|---|---|\n| **Zipkin** | [http://localhost:9411](http://localhost:9411) | Search traces by traceId, service, duration |\n| **Kafka UI** | [http://localhost:8095](http://localhost:8095) | Inspect Kafka topics & Kafka message headers (traceparent) |\n| **Kibana** | [http://localhost:5601](http://localhost:5601) | Elasticsearch index health |\n| **Prometheus** | [http://localhost:9090](http://localhost:9090) | Raw PromQL queries |\n\n> **Tip:** Copy a `traceId` from a service log line and paste it directly in the Zipkin search box to see the full distributed trace across all services."
+      }
+    }
+  ]
+}

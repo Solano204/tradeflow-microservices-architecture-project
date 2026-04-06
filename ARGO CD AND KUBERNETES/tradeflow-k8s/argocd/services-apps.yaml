@@ -1,0 +1,240 @@
+---
+# Auth Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: auth-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/auth-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Identity Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/identity-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Catalog Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: catalog-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/catalog-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Inventory Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inventory-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/inventory-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Order Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/order-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Payment Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: payment-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/payment-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Fraud Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fraud-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/fraud-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+# Search Service Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: search-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Solano204/tradeflow-k8s-gitops.git
+    targetRevision: main
+    path: services/search-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tradeflow-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.tradeflow</groupId>
+    <artifactId>auth-service</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>TradeFlow Auth Service</name>
+    <description>Auth Service — JWT issuance, refresh token rotation, JWKS, Okta SSO</description>
+
+    <properties>
+        <quarkus.platform.version>3.6.4</quarkus.platform.version>
+        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <surefire-plugin.version>3.1.2</surefire-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+
+        <!-- ================================================================ -->
+        <!-- QUARKUS CORE                                                      -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-reactive</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- DATABASE — PostgreSQL + Hibernate ORM + Panache                  -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-orm-panache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- FLYWAY — DB migrations                                            -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-flyway</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- REDIS — Refresh token store                                       -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-redis-client</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- SECURITY — JWT / OIDC                                             -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt-build</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-oidc-client</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- KAFKA — Outbox relay + event consumers                           -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-reactive-messaging-kafka</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- SCHEDULER — Outbox relay + PKCE cleanup                          -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-scheduler</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- REACTIVE HTTP CLIENT — Okta token exchange                       -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-reactive-jackson</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- HEALTH / METRICS                                                  -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- BCrypt — Password hashing                                        -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>at.favre.lib</groupId>
+            <artifactId>bcrypt</artifactId>
+            <version>0.10.2</version>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- TOTP — MFA support                                               -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>dev.samstevens.totp</groupId>
+            <artifactId>totp</artifactId>
+            <version>1.7.1</version>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- JACKSON — JSON utilities                                         -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- LOGGING                                                          -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-logging-json</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- GRPC (optional — reflection service only)                        -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-grpc</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- OPENAPI / SWAGGER                                                -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+
+        <!-- CDI scope annotations -->
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- OPENTELEMETRY — Distributed Tracing                              -->
+        <!--                                                                  -->
+        <!-- TWO dependencies work together:                                  -->
+        <!--                                                                  -->
+        <!-- 1. quarkus-opentelemetry                                         -->
+        <!--    Bundles: OTel SDK, W3C propagator, HTTP server/client         -->
+        <!--    auto-instrumentation, Kafka auto-instrumentation (SmallRye),  -->
+        <!--    Hibernate ORM span creation.                                  -->
+        <!--                                                                  -->
+        <!-- 2. quarkus-opentelemetry-exporter-zipkin  ← KEY ADDITION        -->
+        <!--    Sends finished spans directly to Zipkin v2 JSON endpoint      -->
+        <!--    (POST /api/v2/spans on port 9411).                            -->
+        <!--                                                                  -->
+        <!--    WITHOUT THIS: quarkus-opentelemetry only includes the OTLP    -->
+        <!--    exporter (port 4318). Standard Zipkin does not speak OTLP.   -->
+        <!--    Spans are silently dropped — Auth Service never appears        -->
+        <!--    in Zipkin's service dropdown.                                 -->
+        <!--                                                                  -->
+        <!--    WITH THIS: spans go directly to Zipkin in the same format     -->
+        <!--    as Spring Boot services → all services appear in Zipkin       -->
+        <!--    and cross-service traces link correctly.                      -->
+        <!--                                                                  -->
+        <!-- DO NOT add opentelemetry-kafka-clients-2.6 manually —           -->
+        <!-- conflicts with OTel version pinned by Quarkus BOM.              -->
+        <!-- DO NOT add quarkus-jdbc-tracing — does not exist in 3.6.4.      -->
+        <!-- DO NOT set quarkus.datasource.jdbc.tracing=true — OpenTracing.  -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-opentelemetry</artifactId>
+            <!-- version managed by quarkus-bom -->
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- TESTING                                                          -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-test-security</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Quarkus Maven Plugin -->
+            <plugin>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Compiler -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <!-- Surefire for unit tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <maven.home>${maven.home}</maven.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <activation>
+                <property>
+                    <name>native</name>
+                </property>
+            </activation>
+            <properties>
+                <skipITs>false</skipITs>
+                <quarkus.native.enabled>true</quarkus.native.enabled>
+            </properties>
+        </profile>
+    </profiles>
+
+</project>

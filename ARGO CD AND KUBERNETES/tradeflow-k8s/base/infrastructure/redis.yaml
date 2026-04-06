@@ -1,0 +1,333 @@
+---
+# Auth Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: auth-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: auth-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-redis
+  template:
+    metadata:
+      labels:
+        app: auth-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --maxmemory
+            - "256mb"
+            - --maxmemory-policy
+            - allkeys-lru
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# Identity Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: identity-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: identity-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: identity-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-redis
+  template:
+    metadata:
+      labels:
+        app: identity-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --appendonly
+            - "yes"
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# Catalog Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: catalog-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: catalog-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: catalog-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-redis
+  template:
+    metadata:
+      labels:
+        app: catalog-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --appendonly
+            - "yes"
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# Payment Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: payment-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: payment-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: payment-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-redis
+  template:
+    metadata:
+      labels:
+        app: payment-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --maxmemory
+            - "128mb"
+            - --maxmemory-policy
+            - allkeys-lru
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+# Fraud Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: fraud-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fraud-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: fraud-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-redis
+  template:
+    metadata:
+      labels:
+        app: fraud-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --maxmemory
+            - "256mb"
+            - --maxmemory-policy
+            - allkeys-lru
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+# Search Service Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-redis
+  namespace: tradeflow-infrastructure
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: search-redis
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: search-redis
+  namespace: tradeflow-infrastructure
+spec:
+  serviceName: search-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-redis
+  template:
+    metadata:
+      labels:
+        app: search-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command:
+            - redis-server
+            - --maxmemory
+            - "128mb"
+            - --maxmemory-policy
+            - allkeys-lru
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Maven wrapper — delegates to system Maven or downloads it
+exec mvn "$@"

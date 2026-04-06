@@ -1,0 +1,230 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-config
+  namespace: tradeflow
+data:
+  POSTGRES_URL: "jdbc:postgresql://postgres-service:5432/payment_db"
+  POSTGRES_REACTIVE_URL: "postgresql://postgres-service:5432/payment_db"
+  MONGO_URL: "mongodb://mongo-service:27017/payment_audit"
+  REDIS_URL: "redis://redis-service:6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service:8080/.well-known/jwks.json"
+  AUTH_SERVICE_URL: "http://auth-service:8080"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secrets
+  namespace: tradeflow
+type: Opaque
+stringData:
+  POSTGRES_USER: "payment"
+  POSTGRES_PASSWORD: "REPLACE_WITH_VAULT_SECRET"
+  STRIPE_SECRET_KEY: "sk_live_REPLACE_WITH_VAULT_SECRET"
+  STRIPE_WEBHOOK_SECRET: "whsec_REPLACE_WITH_VAULT_SECRET"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: tradeflow
+  labels:
+    app: payment-service
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-service
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: tradeflow
+  labels:
+    app: payment-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: payment-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: payment-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/q/metrics"
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: payment-service
+          image: tradeflow/payment-service:1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payment-service-config
+            - secretRef:
+                name: payment-service-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"   # GraalVM native — much lower footprint than JVM
+            limits:
+              cpu: "2000m"
+              memory: "512Mi"
+          startupProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            # GraalVM native: ready in ~8ms. Large window for safety on first pull.
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            failureThreshold: 15
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 2
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-service-hpa
+  namespace: tradeflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-service-pdb
+  namespace: tradeflow
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: payment-service
+
+---
+# MOST RESTRICTIVE NetworkPolicy in the platform.
+# Payment Service is never directly exposed to the internet.
+# Stripe webhooks arrive via api-gateway, not directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: payment-service-netpol
+  namespace: tradeflow
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway    # External buyer/merchant + Stripe webhooks via gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-service  # SAGA commands + internal status checks
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - protocol: TCP
+          port: 27017
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Stripe API — egress to public internet on 443 only
+    - ports:
+        - protocol: TCP
+          port: 443

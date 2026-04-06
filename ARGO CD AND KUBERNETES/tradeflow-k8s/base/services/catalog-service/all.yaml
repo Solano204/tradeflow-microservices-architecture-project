@@ -1,0 +1,101 @@
+---
+# Catalog Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-service-config
+  namespace: tradeflow-production
+data:
+  POSTGRES_URL: "jdbc:postgresql://catalog-postgres.tradeflow-infrastructure.svc.cluster.local:5432/catalog_db"
+  MONGODB_URI: "mongodb://catalog-mongodb.tradeflow-infrastructure.svc.cluster.local:27017/catalog_details"
+  REDIS_HOST: "catalog-redis.tradeflow-infrastructure.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  AWS_REGION: "us-east-1"
+  AWS_ACCESS_KEY_ID: "test"
+  AWS_SECRET_ACCESS_KEY: "test"
+  MEDIA_S3_BUCKET: "tradeflow-product-media"
+  CDN_DOMAIN: "localhost:4566"
+  ZIPKIN_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:9411"
+  SPRING_PROFILES_ACTIVE: "prod"
+---
+# Catalog Service Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: catalog-service-secret
+  namespace: tradeflow-production
+type: Opaque
+stringData:
+  POSTGRES_USER: "catalog"
+  POSTGRES_PASSWORD: "catalog_secret"
+---
+# Catalog Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: tradeflow-production
+  labels:
+    app: catalog-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
+      name: http
+  selector:
+    app: catalog-service
+---
+# Catalog Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  namespace: tradeflow-production
+  labels:
+    app: catalog-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-service
+  template:
+    metadata:
+      labels:
+        app: catalog-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: catalog-service
+          image: joshua76i/tradeflow-catalog-service:1.0.0
+          ports:
+            - containerPort: 8082
+              name: http
+          envFrom:
+            - configMapRef:
+                name: catalog-service-config
+            - secretRef:
+                name: catalog-service-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 20

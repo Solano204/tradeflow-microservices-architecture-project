@@ -1,0 +1,30 @@
+apiVersion: 1
+
+datasources:
+
+  # ── Prometheus ────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://tradeflow-prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "15s"
+
+  # ── Zipkin (Tempo-compatible trace datasource) ────────────
+  - name: Zipkin
+    type: zipkin
+    uid: zipkin
+    access: proxy
+    url: http://tradeflow-zipkin:9411
+    editable: false
+    jsonData:
+      # Link traces to Loki logs (optional, safe to leave)
+      tracesToLogsV2:
+        datasourceUid: ''
+      # Link trace spans to Prometheus metrics
+      serviceMap:
+        datasourceUid: prometheus

@@ -1,0 +1,38 @@
+# TradeFlow Search Synonyms
+# Format: comma-separated equivalent terms
+# Updated via Elasticsearch Synonyms API (no re-index needed in ES 8.10+)
+
+# Electronics
+mobile phone, cell phone, smartphone, teléfono celular, móvil, celular
+laptop, notebook, portátil, computadora portátil, laptop computer
+television, tv, smart tv, pantalla, televisión
+tablet, ipad, tableta
+headphones, earbuds, auriculares, audifonos, earphones
+charger, cargador, power adapter
+case, funda, protector
+keyboard, teclado
+mouse, ratón
+
+# Clothing & Fashion
+shoes, sneakers, zapatos, tenis, calzado
+shirt, playera, camiseta, blusa
+pants, trousers, pantalón, jeans
+dress, vestido
+jacket, chamarra, chaqueta
+bag, bolsa, purse, mochila, backpack
+
+# Home
+refrigerator, fridge, refrigerador, nevera
+washing machine, lavadora
+microwave, microondas
+blender, licuadora
+sofa, couch, sofá, sillón
+
+# Health & Beauty
+perfume, fragrance, fragancia
+shampoo, champú
+moisturizer, crema hidratante, lotion
+
+# Sports
+bicycle, bike, bicicleta
+running shoes, tenis para correr, zapatillas deportivas

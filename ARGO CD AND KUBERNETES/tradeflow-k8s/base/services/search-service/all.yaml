@@ -1,0 +1,85 @@
+---
+# Search Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-service-config
+  namespace: tradeflow-production
+data:
+  ES_HOST: "search-elasticsearch.tradeflow-infrastructure.svc.cluster.local"
+  ES_PORT: "9200"
+  REDIS_HOST: "search-redis.tradeflow-infrastructure.svc.cluster.local"
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka.tradeflow-infrastructure.svc.cluster.local:29092"
+  AUTH_SERVICE_JWKS_URI: "http://auth-service.tradeflow-production.svc.cluster.local:8080/.well-known/jwks.json"
+  CATALOG_SERVICE_URL: "http://catalog-service.tradeflow-production.svc.cluster.local:8082"
+  INVENTORY_SERVICE_URL: "http://inventory-service.tradeflow-production.svc.cluster.local:8083"
+  ZIPKIN_URL: "http://zipkin.tradeflow-infrastructure.svc.cluster.local:9411"
+  SPRING_PROFILES_ACTIVE: "prod"
+---
+# Search Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-service
+  namespace: tradeflow-production
+  labels:
+    app: search-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8089
+      targetPort: 8089
+      protocol: TCP
+      name: http
+  selector:
+    app: search-service
+---
+# Search Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-service
+  namespace: tradeflow-production
+  labels:
+    app: search-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-service
+  template:
+    metadata:
+      labels:
+        app: search-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: search-service
+          image: joshua76i/tradeflow-search-service:1.0.0
+          ports:
+            - containerPort: 8089
+              name: http
+          envFrom:
+            - configMapRef:
+                name: search-service-config
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8089
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8089
+            initialDelaySeconds: 60
+            periodSeconds: 20

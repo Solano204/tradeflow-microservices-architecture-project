@@ -1,0 +1,167 @@
+# ================================================================
+# Analytics Service — Kubernetes Manifests
+# ================================================================
+# CRITICAL DIFFERENCE from other services:
+# This service uses a PersistentVolumeClaim for RocksDB state.
+# If the PVC is lost, Kafka Streams must rebuild state from
+# Kafka changelog topics — can take minutes for large state.
+# ================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tradeflow
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+  namespace: tradeflow
+data:
+  MONGODB_DATABASE: tradeflow_analytics
+  REDIS_PORT: "6379"
+  ROCKSDB_STATE_DIR: /data/kafka-streams
+  KAFKA_STREAMS_APPLICATION_ID: analytics-streams-v1
+  KAFKA_STREAMS_NUM_THREADS: "2"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: analytics-service-secrets
+  namespace: tradeflow
+type: Opaque
+data:
+  REDIS_PASSWORD: ""
+
+---
+# StatefulSet (not Deployment) — required for:
+# 1. Stable Pod identity (Kafka Streams uses it for partition assignment)
+# 2. Ordered PVC binding (each pod gets its own RocksDB volume)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: analytics-service
+  namespace: tradeflow
+  labels:
+    app: analytics-service
+spec:
+  serviceName: analytics-service-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app: analytics-service
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+        - name: analytics-service
+          image: tradeflow/analytics-service:latest
+          ports:
+            - containerPort: 8089
+              name: http
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://mongodb-service:27017/tradeflow_analytics"
+            - name: REDIS_HOST
+              value: "redis-service"
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: analytics-service-config
+                  key: REDIS_PORT
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-service:9092"
+            - name: JWK_SET_URI
+              value: "http://auth-service:8080/.well-known/jwks.json"
+            - name: ROCKSDB_STATE_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: analytics-service-config
+                  key: ROCKSDB_STATE_DIR
+          volumeMounts:
+            - name: rocksdb-data
+              mountPath: /data/kafka-streams   # RocksDB state store
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8089
+            initialDelaySeconds: 30  # Kafka Streams needs time to start and assign partitions
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8089
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8089
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12    # 120s max startup
+
+  # PVC template — each pod gets its OWN RocksDB volume
+  volumeClaimTemplates:
+    - metadata:
+        name: rocksdb-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"  # Replace with your cloud provider's SSD storage class
+        resources:
+          requests:
+            storage: 10Gi   # RocksDB with 7 days of data — adjust based on event volume
+
+---
+# Headless Service — for StatefulSet pod identity
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service-headless
+  namespace: tradeflow
+spec:
+  clusterIP: None
+  selector:
+    app: analytics-service
+  ports:
+    - port: 8089
+      targetPort: 8089
+
+---
+# Regular Service — for HTTP traffic
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: tradeflow
+spec:
+  selector:
+    app: analytics-service
+  ports:
+    - port: 8089
+      targetPort: 8089
+      name: http
+
+---
+# Note: HPA is NOT used with StatefulSet + Kafka Streams.
+# Adding/removing pods changes the Kafka Streams partition assignment,
+# which triggers a rebalance and temporary unavailability.
+# Scale manually with: kubectl scale statefulset analytics-service --replicas=N -n tradeflow

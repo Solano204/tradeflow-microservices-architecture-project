@@ -1,0 +1,371 @@
+# ============================================================
+# TradeFlow Auth Service — Kubernetes Manifests
+# ============================================================
+# Deploy order:
+# 1. kubectl apply -f k8s/auth-service.yaml
+#
+# Prerequisites:
+# - PostgreSQL (external RDS or StatefulSet)
+# - Redis (external ElastiCache or StatefulSet)
+# - Kafka (external MSK or StatefulSet)
+# - JWT key pair as Kubernetes Secret (auth-jwt-keys)
+
+---
+# ============================================================
+# ConfigMap — non-secret configuration
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: tradeflow
+  labels:
+    app: auth-service
+    component: config
+data:
+  DB_HOST: "postgres-service.tradeflow.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "tradeflow_auth"
+  REDIS_URL: "redis://redis-service.tradeflow.svc.cluster.local:6379"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service.tradeflow.svc.cluster.local:9092"
+  JWT_ISSUER: "https://auth.tradeflow.io"
+  JWT_KID: "auth-key-2024-v1"
+  JWT_PUBLIC_KEY_PATH: "/etc/auth/keys/jwt-public-key.pem"
+  JWT_PRIVATE_KEY_PATH: "/etc/auth/keys/jwt-private-key.pem"
+  OKTA_ENABLED: "false"
+  OUTBOX_RELAY_INTERVAL_MS: "500"
+  OUTBOX_RELAY_BATCH_SIZE: "50"
+
+---
+# ============================================================
+# Secret — sensitive values
+# IMPORTANT: In production use Vault or AWS Secrets Manager.
+# These base64 values are examples — replace with your own!
+# base64: echo -n "value" | base64
+# ============================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-service-secrets
+  namespace: tradeflow
+  labels:
+    app: auth-service
+type: Opaque
+data:
+  DB_USERNAME: dHJhZGVmbG93X2F1dGg=     # tradeflow_auth
+  DB_PASSWORD: Y2hhbmdlLW1lLWluLXByb2Q= # change-me-in-prod
+  REDIS_PASSWORD: ""                      # empty if no Redis auth
+  OKTA_CLIENT_ID: ""
+  OKTA_CLIENT_SECRET: ""
+
+---
+# ============================================================
+# Secret — JWT RSA key pair
+# Mount as files at /etc/auth/keys/
+#
+# Generate keys:
+#   openssl genrsa -out jwt-private-key.pem 2048
+#   openssl rsa -in jwt-private-key.pem -pubout -out jwt-public-key.pem
+# ============================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-jwt-keys
+  namespace: tradeflow
+  labels:
+    app: auth-service
+type: Opaque
+stringData:
+  jwt-private-key.pem: |
+    -----BEGIN PRIVATE KEY-----
+    REPLACE_WITH_YOUR_RSA_PRIVATE_KEY_BASE64_ENCODED
+    -----END PRIVATE KEY-----
+  jwt-public-key.pem: |
+    -----BEGIN PUBLIC KEY-----
+    REPLACE_WITH_YOUR_RSA_PUBLIC_KEY_BASE64_ENCODED
+    -----END PUBLIC KEY-----
+
+---
+# ============================================================
+# Deployment
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: tradeflow
+  labels:
+    app: auth-service
+    version: "1.0.0"
+spec:
+  replicas: 2                          # Minimum 2 for high availability
+  selector:
+    matchLabels:
+      app: auth-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0               # Zero-downtime rolling deploy
+
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+
+    spec:
+      serviceAccountName: auth-service-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      containers:
+        - name: auth-service
+          image: tradeflow/auth-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # --------------------------------------------------------
+          # Environment — from ConfigMap + Secrets
+          # --------------------------------------------------------
+          envFrom:
+            - configMapRef:
+                name: auth-service-config
+            - secretRef:
+                name: auth-service-secrets
+
+          # --------------------------------------------------------
+          # Volume mounts — JWT keys from Secret
+          # --------------------------------------------------------
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/auth/keys
+              readOnly: true
+
+          # --------------------------------------------------------
+          # Resources — tuned for GraalVM native (~8ms startup)
+          # Adjust for JVM mode: increase memory to 512Mi/1Gi
+          # --------------------------------------------------------
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # --------------------------------------------------------
+          # Kubernetes Probes
+          # GraalVM native: 8ms startup → startup probe is brief
+          # JVM: 2-3s startup → increase failureThreshold
+          # --------------------------------------------------------
+
+          # Startup probe — runs once until success
+          startupProbe:
+            httpGet:
+              path: /actuator/health/startup
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            failureThreshold: 20      # 40 seconds total window (JVM may need more)
+            successThreshold: 1
+
+          # Liveness probe — if fails, K8s restarts the Pod
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/live
+              port: 8080
+            initialDelaySeconds: 0   # Startup probe handles initial delay
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          # Readiness probe — if fails, Pod removed from load balancer
+          # Checks PostgreSQL + Redis connectivity
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+            timeoutSeconds: 3
+
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: auth-jwt-keys
+            defaultMode: 0400          # Read-only by owner only
+
+      # Ensure pods are spread across nodes for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: auth-service
+
+---
+# ============================================================
+# Service — ClusterIP for internal access
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: tradeflow
+  labels:
+    app: auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+# ============================================================
+# HPA — Horizontal Pod Autoscaler
+# Scales 2-10 replicas based on CPU utilization.
+# Auth Service is on the critical path for all logins.
+# ============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service-hpa
+  namespace: tradeflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30    # Scale up quickly (login spikes)
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # Scale down slowly (avoid flapping)
+
+---
+# ============================================================
+# PodDisruptionBudget — minimum 1 Pod always available
+# Prevents all Pods being evicted during node drain
+# ============================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: tradeflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+---
+# ============================================================
+# NetworkPolicy — restrict access to Auth Service
+# Only API Gateway + internal services can reach it
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-network-policy
+  namespace: tradeflow
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from API Gateway (external requests)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - port: 8080
+    # Allow Prometheus scraping
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+  egress:
+    # Allow PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+    # Allow Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    # Allow Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - port: 9092
+    # Allow DNS
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+    # Allow external HTTPS (Okta token exchange)
+    - to: []
+      ports:
+        - port: 443
+
+---
+# ============================================================
+# ServiceAccount
+# ============================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auth-service-sa
+  namespace: tradeflow
+  labels:
+    app: auth-service
